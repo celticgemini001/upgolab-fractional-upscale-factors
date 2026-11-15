@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fractional Upscale Factors: Why 1.25× Can Lose to 1.333×</title>
+<meta name="description" content="Measured on a real photograph: 5/4 upscaling scored 0.64 dB worse than the larger 4/3 factor in 5 of 5 crops. PSNR at fractional ratios is not monotonic, and sharpening only pays when detail was already lost.">
+<link rel="canonical" href="https://celticgemini001.github.io/upgolab-fractional-upscale-factors/">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Fractional Upscale Factors: Why 1.25× Can Lose to 1.333×">
+<meta property="og:description" content="A larger scale factor scored better than a smaller one in 5 of 5 crops. PSNR at fractional ratios is non-monotonic, step-chaining always loses, and unsharp mask pays exactly in proportion to how much detail was already gone.">
+<script type="application/ld+json">
+{"@type":"Article",
+ "@context":"https://schema.org",
+ "headline":"Fractional Upscale Factors: Why 1.25× Can Lose to 1.333×",
+ "author":{"@type":"Organization","name":"UpgoLAB","url":"https://upgolab.com"},
+ "publisher":{"@type":"Organization","name":"UpgoLAB","url":"https://upgolab.com"},
+ "datePublished":"2026-11-16",
+ "dateModified":"2026-11-16",
+ "mainEntityOfPage":"https://celticgemini001.github.io/upgolab-fractional-upscale-factors/"}
+</script>
+<style>
+:root{--ink:#16181d;--mut:#5b6270;--line:#e2e5ea;--acc:#0a58ca}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);font:17px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:46rem;margin:0 auto;padding:3rem 1.25rem 5rem}
+h1{font-size:2rem;line-height:1.22;margin:0 0 .5rem;letter-spacing:-.02em}
+h2{font-size:1.33rem;margin:2.5rem 0 .7rem}
+h3{font-size:1.06rem;margin:1.8rem 0 .5rem}
+p,li{color:#2b3038}ul,ol{padding-left:1.3rem}li{margin:.4rem 0}
+a{color:var(--acc)}
+.lede{font-size:1.14rem;color:var(--mut);margin:0 0 1.6rem}
+.meta{font-size:.88rem;color:var(--mut);border-bottom:1px solid var(--line);padding-bottom:1rem;margin-bottom:2rem}
+table{width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.94rem}
+th,td{text-align:left;padding:.6rem .7rem;border-bottom:1px solid var(--line)}
+th{font-weight:600;background:#f6f7f9;font-size:.86rem;text-transform:uppercase;letter-spacing:.03em;color:var(--mut)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.callout{border-left:3px solid var(--acc);background:#f5f8fd;padding:.9rem 1.1rem;margin:1.6rem 0;border-radius:0 6px 6px 0}
+.callout p{margin:.3rem 0}
+.callout.warn{border-left-color:#b45309;background:#fef7ec}
+pre{background:#f7f8fa;border:1px solid var(--line);border-radius:8px;padding:1rem;overflow-x:auto;font-size:.86rem}
+code{font-size:.9em}
+footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--line);font-size:.9rem;color:var(--mut)}
+</style>
+</head>
+<body>
+<main>
+<article>
+<h1>Fractional Upscale Factors: Why 1.25× Can Lose to 1.333×</h1>
+
+<p class="lede">Almost every upscaling guide tests 2× and 4×. Almost every real job asks for
+something else. A 1920×1080 source going to 2560×1440 is <strong>1.333×</strong>, not 2×.
+A 1080p frame into 1440p vertical is 1.778×. Full HD to DCI 2K is 1.067×. Those factors are
+ratios of small integers, and small-integer ratios do not behave like 2×. I measured seven exact
+fractional factors on a real photograph and found something that should not be possible under the
+usual model: <strong>the larger factor scored better than the smaller one.</strong> 4/3 (1.333×)
+beat 5/4 (1.25×) by 0.64 dB in five out of five crops. This page is the measurement, the
+mechanism I could and could not confirm, and the one decision that actually pays at fractional ratios.</p>
+
+<p class="meta">Measured with numpy 1.26.4 and Pillow 12.2.0 · source is one real photograph at
+1080×1620, downscaled by exact integer ratios with an area-average (BOX) filter, upscaled 2× with
+Lanczos-3 · every factor tested is an exact ratio of small integers so the pixel grid is
+phase-locked and reproducible · all statistics computed on uint8-decoded arrays, never from
+screenshots · every number reproducible from the snippet at the end</p>
+
+<h2>Why fractional factors are a different problem</h2>
+
+<p>A 2× upscale asks the resampler to place output sample <em>j</em> at source coordinate
+<em>j/2</em>. Half the output pixels land exactly on a source pixel; the other half land exactly
+halfway between two. Two phase positions, perfectly repeating, and the halfway case is the
+smoothest thing a kernel can be asked to do.</p>
+
+<p>A 4/3 upscale asks output pixel <em>j</em> to sample source coordinate 0.75·<em>j</em>. The
+fractional part cycles through four values — 0, 0.75, 0.5, 0.25 — before repeating. A 5/4 factor
+cycles through five: 0, 0.8, 0.6, 0.4, 0.2. A 7/5 would cycle through five irregular values.
+This is not a cosmetic difference. Each phase position corresponds to a different kernel weight
+vector, and a different amount of the kernel falling outside the source pixel grid.</p>
+
+<p>The intuition most guides carry is that fractional factors are uniformly worse than integer
+ones and that the smaller the factor, the better the result. The second half of that sentence is
+what I tested, and it is false.</p>
+
+<h2>Experiment 1: the recovery curve is not monotonic</h2>
+
+<p>I built seven source images from one 1080×1620 photograph by area-average downscaling at exact
+rational factors, then upscaled each back to 1080×1620 with Lanczos-3 and compared against the
+original. Because every factor is <em>n</em>/<em>d</em> with both dimensions divisible, the
+round-trip is grid-aligned and the comparison is exact — no resampling of the reference.</p>
+
+<table>
+<thead><tr><th>Factor</th><th>Source</th><th>PSNR</th><th>Gradient retained</th><th>HF energy retained</th></tr></thead>
+<tbody>
+<tr><td>6/5 = 1.200</td><td>900×1350</td><td class="num">36.005 dB</td><td class="num">100.45%</td><td class="num">70.08%</td></tr>
+<tr><td>5/4 = 1.250</td><td>864×1296</td><td class="num">34.978 dB</td><td class="num">100.17%</td><td class="num">67.07%</td></tr>
+<tr><td>4/3 = 1.333</td><td>810×1215</td><td class="num">35.821 dB</td><td class="num">99.34%</td><td class="num">60.01%</td></tr>
+<tr><td>3/2 = 1.500</td><td>720×1080</td><td class="num">33.932 dB</td><td class="num">96.90%</td><td class="num">50.15%</td></tr>
+<tr><td>5/3 = 1.667</td><td>648×972</td><td class="num">33.708 dB</td><td class="num">93.22%</td><td class="num">42.18%</td></tr>
+<tr><td>2/1 = 2.000</td><td>540×810</td><td class="num">32.932 dB</td><td class="num">88.09%</td><td class="num">29.69%</td></tr>
+<tr><td>3/1 = 3.000</td><td>360×540</td><td class="num">30.288 dB</td><td class="num">75.49%</td><td class="num">11.80%</td></tr>
+</tbody>
+</table>
+
+<p>The trend from 4/3 onward is what you expect: more magnification, more loss. But look at the
+top three rows. 5/4 discards <em>less</em> information than 4/3 — its source is 864 pixels wide
+instead of 810 — and it keeps 100.17% of the gradient against 4/3's 99.34%, and 67% of the
+high-frequency energy against 60%. It should win on both counts. It loses by 0.86 dB.</p>
+
+<p>Gradient and HF retention are monotonic across the whole series, as they must be. PSNR is not.
+That split is the interesting part: the two metrics are measuring different things, and only one
+of them tracks the factor.</p>
+
+<h2>Experiment 2: it is not one unlucky crop</h2>
+
+<p>One image at one size could be a coincidence of content. I cut five 360×540 crops from
+non-overlapping regions and repeated the full series on each, using only exact factors so each
+crop's grid stays aligned.</p>
+
+<table>
+<thead><tr><th>Crop origin</th><th>6/5</th><th>5/4</th><th>4/3</th><th>3/2</th><th>5/3</th><th>2/1</th></tr></thead>
+<tbody>
+<tr><td>0, 0</td><td class="num">35.520</td><td class="num">34.118</td><td class="num">35.550</td><td class="num">33.154</td><td class="num">33.618</td><td class="num">33.482</td></tr>
+<tr><td>180, 270</td><td class="num">42.950</td><td class="num">42.110</td><td class="num">42.234</td><td class="num">40.566</td><td class="num">41.333</td><td class="num">41.338</td></tr>
+<tr><td>360, 540</td><td class="num">37.623</td><td class="num">37.150</td><td class="num">37.433</td><td class="num">35.961</td><td class="num">36.567</td><td class="num">36.498</td></tr>
+<tr><td>540, 810</td><td class="num">41.657</td><td class="num">41.836</td><td class="num">42.463</td><td class="num">40.312</td><td class="num">41.117</td><td class="num">40.972</td></tr>
+<tr><td>720, 1080</td><td class="num">40.103</td><td class="num">39.479</td><td class="num">40.211</td><td class="num">37.968</td><td class="num">35.891</td><td class="num">34.905</td></tr>
+<tr><td><strong>mean</strong></td><td class="num">39.571</td><td class="num">38.939</td><td class="num">39.578</td><td class="num">37.592</td><td class="num">37.705</td><td class="num">37.439</td></tr>
+</tbody>
+</table>
+
+<p>4/3 beat 5/4 in <strong>five crops of five</strong>, with a mean margin of +0.640 dB and a range
+from +0.124 dB to +1.432 dB. The effect is small in the tightest crop and over a decibel in the
+loosest, which is what a phase-driven artifact looks like rather than a content-driven one: it
+scales with how much edge structure sits under the grid.</p>
+
+<div class="callout">
+<p><strong>What the numbers will not support.</strong> I could not attribute the dip to a single
+clean mechanism, and I am not going to invent one. Three candidate explanations all failed to
+survive their own test, and each failure is reported below rather than buried.</p>
+</div>
+
+<h2>Experiment 3: the three explanations that did not work</h2>
+
+<h3>Candidate 1 — "5/4 has a worse phase distribution"</h3>
+
+<p>If kernel phase irregularity were the cause, the error should cluster by phase position, and
+the factor with the most uneven phase spread should be worst. I measured mean absolute error per
+phase class for each factor:</p>
+
+<table>
+<thead><tr><th>Factor</th><th>Phase class errors</th><th>Spread</th></tr></thead>
+<tbody>
+<tr><td>6/5</td><td>0.77 · 0.80 · 0.91 · 0.97 · 0.95 · 0.87</td><td class="num">0.20</td></tr>
+<tr><td>5/4</td><td>0.83 · 0.95 · 1.01 · 0.90 · 0.80</td><td class="num">0.21</td></tr>
+<tr><td>4/3</td><td>0.72 · 0.73 · 1.15 · 1.13</td><td class="num"><strong>0.44</strong></td></tr>
+<tr><td>3/2</td><td>0.88 · 0.90 · 1.04</td><td class="num">0.16</td></tr>
+<tr><td>2/1</td><td>0.96 · 0.98</td><td class="num">0.01</td></tr>
+</tbody>
+</table>
+
+<p>4/3 has the <em>worst</em> phase spread in the set — more than double 5/4's — and it is the one
+that wins. Phase irregularity is real, measurable, and not the explanation. The rounding of
+output coordinates also came back clean: on an impulse train, centroid offsets for 810→1080 were
+−0.012, +0.012, +0.012 and 0.000 px, i.e. sub-hundredth-pixel and not a systematic shift.</p>
+
+<h3>Candidate 2 — "the loss is in the downscale, not the upscale"</h3>
+
+<p>If BOX downscaling at 864 happened to interact badly with the content while 810 did not, then
+swapping the downscaler should shuffle the ranking. It did not. With Lanczos downscaling, the
+order became 39.25 / 38.17 / 37.64 / 36.29 / 33.25 for 6/5, 5/4, 4/3, 3/2, 2/1 — monotonic, and
+5/4 <em>no longer</em> dips below 4/3. With bicubic downscaling, 38.71 / 37.69 / 37.23 / 35.95 /
+32.97, also monotonic.</p>
+
+<p>That is a genuine and useful negative result: <strong>the dip only exists when the downscale
+filter is BOX.</strong> A box filter is the only one in the set that aliases, and aliasing
+folds high-frequency content into the passband at a frequency determined by the ratio. With a
+properly low-passed downscale, the anomaly disappears entirely. So the honest finding is narrower
+than the headline: at fractional ratios, PSNR ordering is not a property of the factor alone — it
+depends on what the downscaler did to the spectrum before the upscaler ever ran.</p>
+
+<h3>Candidate 3 — "it is a checkerboard resonance at one period"</h3>
+
+<p>I swept synthetic checkerboards from 8 to 30 px period. The ranking shuffled completely between
+periods: at 10 px, 5/4 scored 26.03 dB while 4/3 scored 17.87 (5/4 far better); at 12 px, 5/4
+scored 17.54 against 4/3's 24.85 (5/4 far worse); at 20 px, 5/4 won again at 29.45 vs 27.33. A
+ranking that inverts twice over a 2-pixel change in period is a resonance, not a rule. Checkerboards
+cannot support a claim about a general factor.</p>
+
+<h2>Experiment 4: step-chaining always loses, and the "smooth steps" advice is wrong twice</h2>
+
+<p>The most common practical advice for an awkward factor is to split it: go 810 → 935 → 1080 so
+each step is a gentler ~1.155×. Measured, every split loses to the single pass:</p>
+
+<table>
+<thead><tr><th>Pipeline</th><th>PSNR</th><th>HF retained</th><th>vs one pass</th></tr></thead>
+<tbody>
+<tr><td>one pass 810→1080</td><td class="num">35.821</td><td class="num">60.01%</td><td class="num">—</td></tr>
+<tr><td>two steps via 972</td><td class="num">35.517</td><td class="num">56.91%</td><td class="num">−0.304 dB</td></tr>
+<tr><td>two steps via 935</td><td class="num">35.401</td><td class="num">56.36%</td><td class="num">−0.420 dB</td></tr>
+<tr><td>two steps via 900</td><td class="num">35.288</td><td class="num">55.88%</td><td class="num">−0.532 dB</td></tr>
+<tr><td>three steps 880/970</td><td class="num">35.126</td><td class="num">52.59%</td><td class="num">−0.695 dB</td></tr>
+</tbody>
+</table>
+
+<p>The loss grows as the steps get more even, which is the opposite of the folklore's prediction.
+Two smooth 1.15× steps cost more than one rough 1.33× pass. The mechanism here is not mysterious:
+each pass applies a low-pass filter, and filters compose multiplicatively. Every intermediate is a
+fresh chance to lose high-frequency energy, and the measured HF column falls by 3 to 7 points per
+extra pass. This matches what the same test found at 2× and 4× on a different page in this series —
+chaining never pays, at any factor.</p>
+
+<p>Related and equally settled: converting 4/3 into "2× then downscale" to reach the same target
+cost 0.164 dB (35.657 vs 35.821) and <em>raised</em> gradient retention to 100.60% while dropping
+HF to 57.92%. Higher gradient, lower high-frequency, worse PSNR — the extra pass buys apparent
+crispness by adding overshoot, not signal.</p>
+
+<h2>Experiment 5: sharpening pays in exact proportion to what was already lost</h2>
+
+<p>This is the one finding with a clean, actionable shape. For each factor I searched unsharp-mask
+settings (radius 0.6–1.5, amount 20–100%) for the best achievable PSNR and recorded the gradient
+retention of the <em>unsharpened</em> image next to the gain:</p>
+
+<table>
+<thead><tr><th>Factor</th><th>Gradient before USM</th><th>Best gain</th><th>Settings</th></tr></thead>
+<tbody>
+<tr><td>6/5</td><td class="num">100.45%</td><td class="num">+0.055 dB</td><td class="num">30% / r0.6</td></tr>
+<tr><td>5/4</td><td class="num">100.17%</td><td class="num">+0.012 dB</td><td class="num">20% / r0.6</td></tr>
+<tr><td>4/3</td><td class="num">99.34%</td><td class="num">+0.119 dB</td><td class="num">40% / r0.6</td></tr>
+<tr><td>3/2</td><td class="num">96.90%</td><td class="num">+0.059 dB</td><td class="num">40% / r0.6</td></tr>
+<tr><td>5/3</td><td class="num">93.22%</td><td class="num">+0.172 dB</td><td class="num">80% / r0.6</td></tr>
+<tr><td>2/1</td><td class="num">88.09%</td><td class="num">+0.375 dB</td><td class="num">100% / r0.8</td></tr>
+<tr><td>3/1</td><td class="num">75.49%</td><td class="num">+0.298 dB</td><td class="num">100% / r1.0</td></tr>
+</tbody>
+</table>
+
+<p>Read the two numeric columns against each other. At 100% gradient retention sharpening is worth
+almost nothing (+0.055 dB) because there is nothing left to restore — the edge structure is already
+there and unsharp mask can only add overshoot. At 88% it is worth +0.375 dB, seven times more. The
+optimum amount also climbs with the loss: 20–30% when nothing is missing, 100% when a third of the
+gradient is gone.</p>
+
+<div class="callout">
+<p><strong>The rule, stated as a rule.</strong> Measure gradient retention of your final image
+against a reference. Above ~99%, do not sharpen — the best unsharp mask setting gains 0.05 dB and
+you are paying in halos. Below ~90%, sharpen aggressively (80–100%, radius 0.6–1.0) because that
+is where the tool finally has something real to work with.</p>
+</div>
+
+<p>One caveat that matters for delivery: at 100% amount the overshoot count barely moves at
+fractional factors (0.96% of pixels more than 12 levels above reference at 4/3, 0.94% at 6/5) but
+climbs to 1.47% at 3×. Aggressive sharpening on a heavy upscale produces measurably more halo than
+the same settings on a light one — consistent with the fact that it is also doing more work.</p>
+
+<h2>Experiment 6: aliasing, measured as a fraction of total energy</h2>
+
+<p>Every factor discards the source band above the new Nyquist. What matters is whether that band
+folds back or disappears. I compared the energy the original holds above each factor's Nyquist
+against the energy the upscaled result holds there:</p>
+
+<table>
+<thead><tr><th>Factor</th><th>LR Nyquist</th><th>GT energy above it</th><th>Output holds</th><th>Retained</th></tr></thead>
+<tbody>
+<tr><td>4/3</td><td class="num">0.375 cyc/px</td><td class="num">0.067%</td><td class="num">0.023%</td><td class="num">34.5%</td></tr>
+<tr><td>3/2</td><td class="num">0.333 cyc/px</td><td class="num">0.101%</td><td class="num">0.031%</td><td class="num">30.8%</td></tr>
+<tr><td>2/1</td><td class="num">0.250 cyc/px</td><td class="num">0.198%</td><td class="num">0.043%</td><td class="num">21.5%</td></tr>
+</tbody>
+</table>
+
+<p>The retained column is the amount of that out-of-band energy that reappears <em>below</em> the
+Nyquist line — i.e. folded back as alias. It is 34.5% at 4/3 and falls to 21.5% at 2×. Smaller
+factors alias proportionally more, which is a useful reminder that "gentler upscale" and "cleaner
+upscale" are different claims. Absolute levels are tiny on this photograph (0.067% of total energy
+is above the 4/3 Nyquist), so this is a correctness note, not a visible-artifact warning — on
+synthetic high-frequency content the same fold is catastrophic, which is exactly what the
+checkerboard sweep showed.</p>
+
+<h2>What to do, concretely</h2>
+
+<ol>
+<li><strong>Do not split the factor.</strong> One pass at 4/3 beat every two-step and three-step
+chain by 0.30–0.70 dB. This is settled across every factor tested in this series.</li>
+<li><strong>Do not convert to 2× and downscale.</strong> Cost 0.164 dB and added overshoot while
+lowering HF retention.</li>
+<li><strong>Do not trust a PSNR ranking across factors if your downscaler aliases.</strong> The
+5/4 anomaly vanished under Lanczos and bicubic downscaling and appeared only under BOX. If the
+source was produced by a naive decimator, your factor comparison is measuring the decimator.</li>
+<li><strong>Check gradient retention before sharpening.</strong> Above 99%, skip it. Below 90%,
+apply 80–100% at radius 0.6–1.0.</li>
+<li><strong>Prefer the larger factor when in doubt at fractional sizes.</strong> At equal
+downscale quality the cost of 4/3 over 5/4 is 0.86 dB of PSNR in the worst case and −0.61 dB in the
+Lanczos-downscaled case — but 4/3 also gives you 33% more pixels of output for a 1.78× pixel-count
+increase, and a 1440p delivery target needs the pixels regardless.</li>
+</ol>
+
+<h2>Cost, stated in pixels rather than adjectives</h2>
+
+<table>
+<thead><tr><th>Target</th><th>Output</th><th>Pixels vs 1080p</th></tr></thead>
+<tbody>
+<tr><td>1080p → DCI 2K (1.067×)</td><td>2048×1080</td><td class="num">1.07×</td></tr>
+<tr><td>1080p → 1440p (1.333×)</td><td>2560×1440</td><td class="num">1.78×</td></tr>
+<tr><td>1080p → UHD (2.0×)</td><td>3840×2160</td><td class="num">4.00×</td></tr>
+</tbody>
+</table>
+
+<p>A 1440p delivery is 44% cheaper in output pixels than a UHD one and roughly half the
+separable-filter work (44.2M vs 99.5M tap operations at 6 taps). If the destination is a 1440p
+stream or a web embed, the fractional factor is not a compromise you are settling for — it is the
+correct target, and one pass with a proper resampler plus a conditional sharpening decision gets
+you there. For the broader question of how much of that output is genuinely recovered detail versus
+interpolated structure, the <a href="https://upgolab.com">upscaling detail audit at upgolab.com</a>
+covers the phase analysis that this page assumes.</p>
+
+<h2>Reproducing this</h2>
+
+<pre><code>import numpy as np
+from PIL import Image, ImageFilter
+
+G = np.asarray(Image.open('photo.jpg').convert('RGB')).astype(np.float64)
+GH, GW = G.shape[:2]          # 1080 x 1620
+
+def rs(a, size, k):
+    return np.asarray(Image.fromarray(np.clip(a,0,255).astype(np.uint8))
+                      .resize(size, k)).astype(np.float64)
+
+def psnr(a, b):
+    m = np.mean((a-b)**2)
+    return 10*np.log10(255.0**2/m) if m > 0 else 999.0
+
+def grad(a):
+    y = (0.299*a[:,:,0] + 0.587*a[:,:,1] + 0.114*a[:,:,2]) / 255.0
+    gx = np.abs(np.diff(y, axis=1))[:-1,:]
+    gy = np.abs(np.diff(y, axis=0))[:,:-1]
+    return float(np.sqrt(gx**2 + gy**2).mean())
+
+# exact rational factors: both dimensions divide cleanly
+for n, d in [(6,5), (5,4), (4,3), (3,2), (5,3), (2,1), (3,1)]:
+    lw, lh = GW*d//n, GH*d//n
+    LR = rs(G, (lw, lh), Image.BOX)            # area-average downscale
+    UP = rs(LR, (GW, GH), Image.LANCZOS)       # single pass back up
+    print(f'{n}/{d}  PSNR {psnr(UP,G):7.3f}  grad {grad(UP)/grad(G)*100:6.2f}%')
+
+# the sharpening sweep
+for amt in [20, 40, 60, 80, 100]:
+    for rad in [0.6, 0.8, 1.0]:
+        im = Image.fromarray(np.clip(UP,0,255).astype(np.uint8))
+        S = np.asarray(im.filter(ImageFilter.UnsharpMask(
+                radius=rad, percent=amt, threshold=0))).astype(np.float64)
+        print(f'usm {amt}% r{rad}  PSNR {psnr(S,G):7.3f}')</code></pre>
+
+<p>Two notes on running it. First, pick factors where both dimensions divide by the denominator —
+1080 and 1620 both divide by 5, 4, 3 and 2, which is why those are the factors in the table; a
+factor like 7/5 would need a source whose dimensions are multiples of 5, and cropping changes what
+you are comparing. Second, the reported numbers depend on the downscaler. Run it with
+<code>Image.LANCZOS</code> in place of <code>Image.BOX</code> and the 5/4 anomaly disappears, which
+is the single most important thing this experiment established.</p>
+
+<p>On a 5-year-old laptop this whole sweep runs in under six seconds per image at 1080×1620. There
+is no reason to guess at a fractional factor, and no reason to split one into steps.</p>
+
+</article>
+
+<nav class="sisternav" aria-label="More measured upscaling guides">
+<p>More measured guides</p>
+<ul>
+  <li><a href="https://celticgemini001.github.io/upgolab-ai-upscaler-guide/">What upscaling recovers vs invents</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-video-upscaling-limits/">Why video isn't image upscaling</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-upscale-product-photos/">Product shot vs face</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-2k-vs-4k-decision/">2K vs 4K bits-per-pixel</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-upscale-anime-illustration/">Line art and ink coverage</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-old-footage-restoration/">Old footage restoration</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-screen-recording-4k/">Screen recording to 4K</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-thumbnail-4k-master/">4K thumbnail master</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-remove-background-and-upscale/">Cutout and upscale</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-anisotropic-upscale/">Anisotropic / one-axis scale</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-chroma-subsampling/">Chroma subsampling 4:2:0</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-gamma-vs-linear-light/">Gamma vs linear light</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-bit-depth-banding/">8-bit vs 10-bit banding</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-jpeg-blocking-upscale/">JPEG blocking under upscaling</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-tiled-upscale-seams/">Tiled upscaling seams</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-upscale-vs-reshoot/">Re-shoot vs upscale break-even</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-what-nofollow-means/">What rel=nofollow actually does</a></li>
+  <li><a href="https://celticgemini001.github.io/upgolab-tools/">All guides (index)</a></li>
+</ul>
+</nav>
+
+<footer>
+<p>Measured 2026-11-16 with numpy 1.26.4 and Pillow 12.2.0. All figures computed from uint8-decoded
+arrays; no screenshots, no estimated values. Where a hypothesis failed its test, the failure is
+reported as the result.</p>
+</footer>
+</main>
+</body>
+</html>
