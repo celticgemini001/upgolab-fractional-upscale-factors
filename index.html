@@ -171,7 +171,7 @@ order became 39.25 / 38.17 / 37.64 / 36.29 / 33.25 for 6/5, 5/4, 4/3, 3/2, 2/1 �
 32.97, also monotonic.</p>
 
 <p>That is a genuine and useful negative result: <strong>the dip only exists when the downscale
-filter is BOX.</strong> A box filter is the only one in the set that aliases, and aliasing
+filter is BOX.</strong> A box filter is the only one in the set that aliases, and <a href="https://celticgemini001.github.io/upgolab-anisotropic-upscale/">aliasing</a>
 folds high-frequency content into the passband at a frequency determined by the ratio. With a
 properly low-passed downscale, the anomaly disappears entirely. So the honest finding is narrower
 than the headline: at fractional ratios, PSNR ordering is not a property of the factor alone — it
@@ -205,7 +205,7 @@ each step is a gentler ~1.155×. Measured, every split loses to the single pass:
 Two smooth 1.15× steps cost more than one rough 1.33× pass. The mechanism here is not mysterious:
 each pass applies a low-pass filter, and filters compose multiplicatively. Every intermediate is a
 fresh chance to lose high-frequency energy, and the measured HF column falls by 3 to 7 points per
-extra pass. This matches what the same test found at 2× and 4× on a different page in this series —
+<a href="https://celticgemini001.github.io/upgolab-ai-upscaler-guide/">extra pass</a>. This matches what the same test found at 2× and 4× on a different page in this series —
 chaining never pays, at any factor.</p>
 
 <p>Related and equally settled: converting 4/3 into "2× then downscale" to reach the same target
@@ -552,6 +552,10 @@ is the single most important thing this experiment established.</p>
 is no reason to guess at a fractional factor, and no reason to split one into steps.</p>
 
 </article>
+<footer>
+<p>Measured 2026-11-16 with numpy 1.26.4 and Pillow 12.2.0. All figures computed from uint8-decoded
+arrays; no screenshots, no estimated values. Where a hypothesis failed its test, the failure is
+reported as the result.</p>
 
 <nav class="sisternav" aria-label="More measured upscaling guides">
 <p>More measured guides</p>
@@ -583,11 +587,6 @@ is no reason to guess at a fractional factor, and no reason to split one into st
   <li><a href="https://celticgemini001.github.io/">All upscaling measurements, start here</a></li>
 </ul>
 </nav>
-
-<footer>
-<p>Measured 2026-11-16 with numpy 1.26.4 and Pillow 12.2.0. All figures computed from uint8-decoded
-arrays; no screenshots, no estimated values. Where a hypothesis failed its test, the failure is
-reported as the result.</p>
 </footer>
 </main>
 </body>
