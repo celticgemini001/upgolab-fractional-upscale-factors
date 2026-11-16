@@ -304,7 +304,7 @@ mean absolute Laplacian relative to the original.</p>
 </table>
 
 <p>Three separate Lanczos implementations — Pillow's, libswscale's, zimg's — land within
-<strong>0.009 dB</strong> of each other on PSNR and within 0.5 points on HF retention. They are not
+<strong>0.0094 dB</strong> of each other on PSNR and within 0.5 points on HF retention. They are not
 the same code: Pillow's output and swscale's differ by 56.9 dB PSNR against each other, which is a
 real numeric difference in the low bits. But that difference is invisible at the level of the
 reconstruction metric, because it is phase-identical. If your only decision is "Pillow or
@@ -412,8 +412,8 @@ block-quantised input mostly gives it edges to overshoot.</p>
 <p>I checked that last negative number rather than dropping it: six disjoint crops of the BOX+JPEG
 q60 case gave Lanczos minus bicubic a mean of <strong>−0.104 dB</strong> (range −0.275 to +0.134,
 2 of 6 wins). It is a real, small, consistent loss. The usual fix — Gaussian pre-blur before
-Lanczos, "blur to kill ringing" — made it much worse: σ=0.4 cost 0.302 dB versus plain Lanczos,
-σ=0.6 cost 0.934, σ=0.8 cost 1.95. Pre-blurring before an upscale throws away the detail the
+Lanczos, "blur to kill ringing" — made it much worse: σ=0.4 cost 0.371 dB versus plain Lanczos,
+σ=0.6 cost 1.264, σ=0.8 cost 2.553. Pre-blurring before an upscale throws away the detail the
 upscale was supposed to reconstruct, and at fractional factors the amount it throws away is larger
 than the ringing it prevents.</p>
 
@@ -474,11 +474,11 @@ source was produced by a naive decimator, your factor comparison is measuring th
 <li><strong>Check gradient retention before sharpening.</strong> Above 99%, skip it. Below 90%,
 apply 80–100% at radius 0.6–1.0.</li>
 <li><strong>Do not shop for an engine.</strong> Three Lanczos implementations landed within
-0.009 dB and the bicubic-to-Lanczos gap at 4/3 (0.072 dB) is smaller than its own crop-to-crop
+0.009 dB of each other and the bicubic-to-Lanczos gap at 4/3 (0.072 dB) is smaller than its own crop-to-crop
 spread (−0.425 to +0.370, 4 of 8 crops). Spend the time on the factor or on the quality of the input
 instead. <code>accurate_rnd+full_chroma_int</code> produced bit-identical output in an RGB pipeline.</li>
 <li><strong>Never pre-blur before a fractional upscale.</strong> Gaussian σ=0.4/0.6/0.8 before
-Lanczos cost 0.30/0.93/1.95 dB on JPEG-q60 input that ringing was supposedly the problem for.</li>
+Lanczos cost 0.37/1.26/2.55 dB on JPEG-q60 input that ringing was supposedly the problem for.</li>
 <li><strong>Prefer the larger factor when in doubt at fractional sizes.</strong> At equal
 downscale quality the cost of 4/3 over 5/4 is 0.86 dB of PSNR in the worst case and −0.61 dB in the
 Lanczos-downscaled case — but 4/3 also gives you 33% more pixels of output for a 1.78× pixel-count
